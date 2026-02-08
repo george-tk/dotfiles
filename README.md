@@ -79,7 +79,7 @@ While the setup script handles most heavy lifting, the following aspects often r
 ### 5. Base Arch Setup (Prerequisites)
 Before running the restore:
 *   Install a base Arch Linux system.
-*   Create your user (`georgek`) and add to `wheel`.
+*   Create your user (`george`) and add to `wheel`.
 *   Install `git`: `pacman -S git`.
 
 ### 6. Troubleshooting
