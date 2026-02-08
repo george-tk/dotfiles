@@ -10,7 +10,7 @@ current_rssi=$(nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2)
 
 # Get List of Networks (excluding current and duplicates)
 # We use icons for signal strength
-mapfile -t lines < <(nmcli --terse --fields "SECURITY,SSID,BARS" device wifi list | sed 's/^--/󰤭 /' | awk -F: '{print $3 "  " $2}' | sort -k3 -u)
+mapfile -t lines < <(nmcli --terse --fields "SECURITY,SSID,BARS" device wifi list | sed 's/^--/󰤭 /' | awk -F: '{print $3 "  " $2 "  " $1 }' | sort -k1 -u)
 
 # Create the Menu
 options="$toggle\n󰑐  Manual Entry / Hidden SSID\n󰃢  Disconnect\n---\n$(printf '%s\n' "${lines[@]}")"
