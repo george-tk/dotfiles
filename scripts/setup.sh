@@ -20,7 +20,7 @@ packages=(
     "qt6-wayland"
     "hyprpaper"
     "hyprlock"
-    "firefox"
+    "hypridle"
     "google-chrome"
     "sddm"
     "bluez"
