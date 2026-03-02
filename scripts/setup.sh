@@ -34,6 +34,7 @@ packages=(
     "ttf-fira-sans" 
     "ttf-fira-code" 
     "ttf-firacode-nerd"
+    "ttf-jetbrains-mono-nerd"
     "jq"
     "brightnessctl"
     "networkmanager"
@@ -41,6 +42,7 @@ packages=(
     "wlogout"
     "flatpak"
     "cronie"
+    "oh-my-posh"
 )
 
 # ----------------------------------------------------------
@@ -194,7 +196,7 @@ fi
 
 # Packages
 _installPackages "${packages[@]}"
-sudo pacman -S wl-clipboard cliphist pavucontrol ripgrep fd fzf tree-sitter-cli neovim
+sudo pacman -S wl-clipboard cliphist pavucontrol ripgrep fd fzf tree-sitter-cli neovim zsh zoxide
 # ----------------------------------------------------------
 # NPM Packages
 # ----------------------------------------------------------
@@ -307,6 +309,16 @@ _enableService bluetooth
 _enableService cronie
 
 echo ":: Services enabled."
+
+if [ "$SHELL" != "$(which zsh)" ]; then
+    echo "Changing default shell to zsh..."
+    chsh -s "$(which zsh)"
+fi
+
+# Create symlink from your repo to home directory
+# Assuming your script runs from the root of your dotfiles repo
+ln -sf "$CONFIG_DIR/zsh/zshrc" "$HOME/.zshrc"
+
 
 # ----------------------------------------------------------
 # Completed
