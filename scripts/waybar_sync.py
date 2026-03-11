@@ -6,8 +6,11 @@ import json
 import time
 import signal
 
-# Global cache for Waybar's PID to avoid looking it up every time
+# --- State Tracking ---
+# We keep track of the current state internally to minimize hyprctl calls.
 waybar_pid = None
+is_waybar_visible = None # None means "unknown, check once"
+is_rofi_open = False
 
 def get_waybar_pid():
     global waybar_pid
@@ -18,32 +21,49 @@ def get_waybar_pid():
     except:
         return None
 
-def toggle_waybar():
-    global waybar_pid
+def toggle_waybar(should_be_visible):
+    global waybar_pid, is_waybar_visible
+    
+    # If we already know it's in the correct state, do nothing.
+    if is_waybar_visible == should_be_visible:
+        return
+
     if waybar_pid is None: get_waybar_pid()
     if waybar_pid:
         try:
-            # os.kill is faster than pkill because it doesn't need to search for the process name
             os.kill(waybar_pid, signal.SIGUSR1)
+            is_waybar_visible = should_be_visible
         except ProcessLookupError:
-            # Waybar might have restarted, refresh PID and try once more
             get_waybar_pid()
             if waybar_pid:
-                try: os.kill(waybar_pid, signal.SIGUSR1)
+                try: 
+                    os.kill(waybar_pid, signal.SIGUSR1)
+                    is_waybar_visible = should_be_visible
                 except: pass
 
-def get_waybar_level():
+def get_initial_state():
+    """Check the actual state of the system once at startup."""
+    global is_waybar_visible, is_rofi_open
     try:
-        output = subprocess.check_output(["hyprctl", "layers", "-j"])
-        data = json.loads(output)
-        for monitor in data:
-            levels = data[monitor].get("levels", {})
+        # Check Waybar visibility
+        layers_output = subprocess.check_output(["hyprctl", "layers", "-j"])
+        layers_data = json.loads(layers_output)
+        
+        is_waybar_visible = False
+        is_rofi_open = False
+        
+        for monitor in layers_data:
+            levels = layers_data[monitor].get("levels", {})
             for level_num, layers in levels.items():
                 for layer in layers:
-                    if layer.get("namespace") == "waybar":
-                        return int(level_num)
-        return -1
-    except: return -1
+                    ns = layer.get("namespace")
+                    if ns == "waybar" and int(level_num) == 2:
+                        is_waybar_visible = True
+                    if ns == "rofi":
+                        is_rofi_open = True
+    except:
+        is_waybar_visible = True # Default to visible on error
+        is_rofi_open = False
 
 def get_window_count():
     try:
@@ -52,34 +72,18 @@ def get_window_count():
         return data.get("windows", 0)
     except: return 0
 
-def is_rofi_running():
-    try:
-        output = subprocess.check_output(["hyprctl", "layers", "-j"])
-        data = json.loads(output)
-        for monitor in data:
-            levels = data[monitor].get("levels", {})
-            for level_num, layers in levels.items():
-                for layer in layers:
-                    if layer.get("namespace") == "rofi":
-                        return True
-        return False
-    except: return False
-
-def sync_waybar():
+def sync():
+    global is_rofi_open
     windows = get_window_count()
-    level = get_waybar_level()
-    rofi = is_rofi_running()
     
-    # Visible (level 2) if: No windows OR Rofi is open
-    should_be_visible = (windows == 0) or rofi
-    is_visible = (level == 2)
-    
-    if should_be_visible != is_visible:
-        toggle_waybar()
+    # Rule: Visible if no windows OR Rofi is open
+    should_be_visible = (windows == 0) or is_rofi_open
+    toggle_waybar(should_be_visible)
 
 def main():
-    # Initial setup
+    global is_rofi_open
     get_waybar_pid()
+    get_initial_state()
     
     signature = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
     if not signature: return
@@ -87,20 +91,35 @@ def main():
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     socket_path = os.path.join(runtime_dir, "hypr", signature, ".socket2.sock")
     
-    sync_waybar()
+    sync()
     
-    # 100% Event-Driven Loop
     while True:
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
                 s.connect(socket_path)
                 while True:
-                    # This blocks and uses 0% CPU until a message arrives
                     data = s.recv(4096).decode('utf-8', errors='ignore')
                     if not data: break
                     
-                    # Whenever Hyprland tells us ANY event happened, we sync Waybar
-                    sync_waybar()
+                    # Split data into individual events (Hyprland sends them separated by \n)
+                    events = data.strip().split('\n')
+                    
+                    needs_sync = False
+                    for event in events:
+                        # 1. Track Rofi state directly from the socket (No hyprctl needed!)
+                        if "openlayer>>rofi" in event:
+                            is_rofi_open = True
+                            needs_sync = True
+                        elif "closelayer>>rofi" in event:
+                            is_rofi_open = False
+                            needs_sync = True
+                        
+                        # 2. Selective filtering: only sync for events that change window state
+                        elif any(ev in event for ev in ["openwindow", "closewindow", "workspace", "movewindow", "fullscreen"]):
+                            needs_sync = True
+                    
+                    if needs_sync:
+                        sync()
         except:
             time.sleep(1)
 
