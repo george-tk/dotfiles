@@ -13,12 +13,12 @@ echo "--- Starting wallpaper rotation at $(date) ---"
 # Wait for the hyprpaper process to exist
 while ! pgrep -x "hyprpaper" > /dev/null; do
     echo "Waiting for hyprpaper process..."
-    sleep 1
+    sleep 0.3
 done
 
 # The dual-monitor setup takes Hyprland and Hyprpaper slightly longer to initialize.
 # We are bumping this to 2 seconds to ensure all Wayland outputs are registered.
-sleep 2 
+sleep 0.3 
 
 # 4. Get Hyprland Instance (Usually auto-detected, but good as a fallback)
 export HYPRLAND_INSTANCE_SIGNATURE=$(hyprctl instances -j | jq -r '.[0].instance')
@@ -45,7 +45,7 @@ echo "Attempting to set wallpaper: $RANDOM_WALLPAPER"
 hyprctl hyprpaper preload "$RANDOM_WALLPAPER"
 
 # Brief pause to ensure preload finishes before applying
-sleep 0.5 
+sleep 0.3 
 
 # The empty string before the comma targets ALL currently connected monitors
 hyprctl hyprpaper wallpaper ",$RANDOM_WALLPAPER"
