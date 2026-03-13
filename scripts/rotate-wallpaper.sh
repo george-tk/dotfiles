@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # 1. Setup Environment
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export PATH=$PATH:/usr/local/bin:/usr/bin
@@ -8,18 +9,18 @@ LOG_FILE="$HOME/.cache/rotate_wallpaper.log"
 exec > >(tee -a "$LOG_FILE" 2>&1)
 echo "--- Starting wallpaper rotation at $(date) ---"
 
-# 3. WAIT logic - This is the most important part
-# Wait for the process to exist
+# 3. WAIT logic - The Race Condition Fix
+# Wait for the hyprpaper process to exist
 while ! pgrep -x "hyprpaper" > /dev/null; do
     echo "Waiting for hyprpaper process..."
     sleep 1
 done
 
-# Even if the process exists, the socket takes a moment to initialize.
-# We wait an extra 2 seconds here to prevent "failed to connect"
-sleep 0.1 
+# The dual-monitor setup takes Hyprland and Hyprpaper slightly longer to initialize.
+# We are bumping this to 2 seconds to ensure all Wayland outputs are registered.
+sleep 2 
 
-# 4. Get Hyprland Instance
+# 4. Get Hyprland Instance (Usually auto-detected, but good as a fallback)
 export HYPRLAND_INSTANCE_SIGNATURE=$(hyprctl instances -j | jq -r '.[0].instance')
 
 # 5. Find Wallpapers
@@ -38,10 +39,19 @@ RANDOM_WALLPAPER=$(echo "$WALLPAPER_FILES" | shuf -n 1)
 # 6. Execute with Error Catching
 echo "Attempting to set wallpaper: $RANDOM_WALLPAPER"
 
-# We use 'hyprpaper' commands directly via hyprctl
-hyprctl hyprpaper unload all || echo "Notice: Nothing to unload yet."
+# Best Practice Order: Preload New -> Set Wallpaper -> Unload Unused
+# This prevents the brief black-screen flash that happens if you unload everything first.
+
 hyprctl hyprpaper preload "$RANDOM_WALLPAPER"
+
+# Brief pause to ensure preload finishes before applying
+sleep 0.5 
+
+# The empty string before the comma targets ALL currently connected monitors
 hyprctl hyprpaper wallpaper ",$RANDOM_WALLPAPER"
+
+# Clean up RAM by unloading wallpapers that are no longer actively displayed
+hyprctl hyprpaper unload unused || echo "Notice: Nothing to unload yet."
 
 echo "Wallpaper successfully set to: $RANDOM_WALLPAPER"
 echo "--- Finished wallpaper rotation at $(date) ---"
