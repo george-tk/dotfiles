@@ -36,16 +36,16 @@ while read -r line; do
         bind_part="${line%%#*}"
     fi
     description=$(echo "$description" | xargs) # trim whitespace
-
     # Clean up the bind part to get keys and action
-    action_part=$(echo "$bind_part" | sed -E 's/^\[\s*bind[a-zA-Z]*\s*=\s*//' | xargs)
-
+    # action_part=$(echo "$bind_part" | sed -E 's/^\s*bind[a-zA-Z]*\s*=\s*//' | xargs)
+    # This removes the 'bind =' part AND swaps SUPER variants for a symbol
+    action_part=$(echo "$bind_part" | sed -E 's/^\[?\s*bind[a-zA-Z]*\s*=\s*//' | xargs)
     # The action is everything from the 3rd comma-separated value onwards
     keys_part=$(echo "$action_part" | cut -d, -f1-2)
     command_part=$(echo "$action_part" | cut -d, -f3-)
 
     # Format keys for display
-    keys_display=$(echo "$keys_part" | sed 's/$mainMod/SUPER/g' | sed 's/,\s*/ + /g' | sed 's/^\s*\+\s*//' | xargs)
+    keys_display=$(echo "$keys_part" | sed 's/$mainMod/󰍲/g' | sed 's/,\s*/ + /g' |sed 's/^\s*\+\s*//' | sed 's/SHIFT/+ SHIFT/g'|  sed 's/ALT/+ ALT/g'| sed 's/SUPER + SUPER_L/󰍲/g'|  sed 's/CONTROL/+ CTRL/g'|xargs)
 
     # If no description was found, use the command part as description
     if [ -z "$description" ]; then
