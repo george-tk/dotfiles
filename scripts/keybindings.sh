@@ -5,74 +5,81 @@
 # |   <  __/ |_| | |_) | | | | | (_| | | | | | (_| \__ \
 # |_|\_\___|\__, |_.__/|_|_| |_|\__,_|_|_| |_|\__, |___/ 
 #           |___/                             |___/ 
-# by Stephan Raabe (2024)
+# Optimized version for performance using single-pass parsing.
 # -----------------------------------------------------
-# Modified to allow executing binds and custom descriptions.
-# For custom descriptions, use '##' in your binds.conf file.
-# Example: bind = $mainMod,T, exec, kitty ## Open a terminal
 
 config_file=~/.config/hypr/conf/binds.conf
 
-# Arrays to store commands and what to show in rofi
-declare -a commands
-declare -a menu_items
-
-# Read binds.conf line by line
-while read -r line; do
-    # We only care about lines that define a bind
-    if ! [[ "$line" =~ ^\s*bind.*= ]]; then
-        continue
-    fi
-
-    # Separate the description from the bind definition
-    description=""
-    bind_part="$line"
-    if [[ "$line" == *"##"* ]]; then
-        description="${line#*## }"
-        bind_part="${line%% ##*}"
-    elif [[ "$line" == *"#"* ]]; then
-        # Fallback to single '#' for existing comments
-        description="${line#*#}"
-        bind_part="${line%%#*}"
-    fi
-    description=$(echo "$description" | xargs) # trim whitespace
-    # Clean up the bind part to get keys and action
-    # action_part=$(echo "$bind_part" | sed -E 's/^\s*bind[a-zA-Z]*\s*=\s*//' | xargs)
-    # This removes the 'bind =' part AND swaps SUPER variants for a symbol
-    action_part=$(echo "$bind_part" | sed -E 's/^\[?\s*bind[a-zA-Z]*\s*=\s*//' | xargs)
-    # The action is everything from the 3rd comma-separated value onwards
-    keys_part=$(echo "$action_part" | cut -d, -f1-2)
-    command_part=$(echo "$action_part" | cut -d, -f3-)
-
+# Use awk to parse the file once and output display items and commands on alternating lines.
+# This eliminates the overhead of multiple process forks per line.
+mapfile -t data < <(awk '
+/^[ \t]*bind[a-zA-Z]*[ \t]*=/ {
+    line = $0
+    # Extract description
+    desc = ""; bind_part = line
+    if (match(line, /##/)) {
+        desc = substr(line, RSTART + 2)
+        bind_part = substr(line, 1, RSTART - 1)
+    } else if (match(line, /#/)) {
+        desc = substr(line, RSTART + 1)
+        bind_part = substr(line, 1, RSTART - 1)
+    }
+    gsub(/^[ \t]+|[ \t]+$/, "", desc)
+    
+    # Extract bind definition
+    sub(/^[ \t]*bind[a-zA-Z]*[ \t]*=[ \t]*/, "", bind_part)
+    
+    # Split fields: Mod, Key, Dispatcher, Params
+    split(bind_part, f, ",")
+    keys_part = f[1] "," f[2]
+    
     # Format keys for display
-    keys_display=$(echo "$keys_part" | sed 's/$mainMod/󰍲/g' | sed 's/,\s*/ + /g' |sed 's/^\s*\+\s*//' | sed 's/SHIFT/+ SHIFT/g'|  sed 's/ALT/+ ALT/g'| sed 's/SUPER + SUPER_L/󰍲/g'|  sed 's/CONTROL/+ CTRL/g'|xargs)
+    keys_display = keys_part
+    gsub(/\$mainMod/, "󰍲", keys_display)
+    gsub(/,\s*/, " + ", keys_display)
+    gsub(/^[ \t]*\+[ \t]*/, "", keys_display)
+    gsub(/SHIFT/, "+ SHIFT", keys_display)
+    gsub(/ALT/, "+ ALT", keys_display)
+    gsub(/SUPER \+ SUPER_L/, "󰍲", keys_display)
+    gsub(/CONTROL/, "+ CTRL", keys_display)
+    gsub(/^[ \t]+|[ \t]+$/, "", keys_display)
+    gsub(/[ \t]+/, " ", keys_display)
 
-    # If no description was found, use the command part as description
-    if [ -z "$description" ]; then
-        description=$(echo "$command_part" | xargs)
-    fi
+    # Extract dispatcher and parameters
+    dispatcher = f[3]; gsub(/^[ \t]+|[ \t]+$/, "", dispatcher)
+    
+    # Find start of parameters (everything after 2nd comma)
+    c = 0; p_start = 0
+    for (i=1; i<=length(bind_part); i++) {
+        if (substr(bind_part, i, 1) == ",") {
+            if (++c == 2) { p_start = i + 1; break }
+        }
+    }
+    params = substr(bind_part, p_start); gsub(/^[ \t]+|[ \t]+$/, "", params)
 
-    # Add to our arrays
-    menu_items+=("${keys_display}"$'\r'"${description}")
+    if (dispatcher == "exec") {
+        executable_command = params
+    } else {
+        executable_command = "hyprctl dispatch " dispatcher " " params
+    }
 
-    dispatcher=$(echo "$command_part" | awk -F, '{print $1}' | xargs)
-    params=$(echo "$command_part" | cut -d, -f2- | xargs)
+    if (desc == "") desc = executable_command
+    
+    # Output alternating lines for mapfile: display text then the command
+    print keys_display "\r" desc
+    print executable_command
+}' "$config_file")
 
-    executable_command=""
-    if [ "$dispatcher" == "exec" ]; then
-        executable_command="$params"
-    else
-        executable_command="hyprctl dispatch $dispatcher $params"
-    fi
-    commands+=("$executable_command")
-
-done < "$config_file"
-
-# Prepare input for rofi
-rofi_input=""
-for item in "${menu_items[@]}"; do
-    rofi_input+="$item\n"
+# Split the data into separate arrays for rofi and execution
+menu_items=()
+commands=()
+for ((i=0; i<${#data[@]}; i+=2)); do
+    menu_items+=("${data[i]}")
+    commands+=("${data[i+1]}")
 done
+
+# Prepare rofi input (efficiently joining array elements)
+rofi_input=$(printf "%s\n" "${menu_items[@]}")
 
 # Launch rofi and get the selected index
 chosen_index=$(echo -e "${rofi_input}" | rofi -dmenu -i -p "  " -format 'i' -markup -eh 2)
