@@ -65,9 +65,10 @@ mapfile -t data < <(awk '
 
     if (desc == "") desc = executable_command
     
-    # Output alternating lines for mapfile: styled display text then the command
+    # Output: single line with a separator for a cleaner look
     # Using Catppuccin Mauve (#cba6f7) for keys and Subtext0 (#a6adc8) for descriptions
-    printf "<b><span color=\"#cba6f7\">%s</span></b>\r<span color=\"#a6adc8\" size=\"small\">%s</span>\n", keys_display, desc
+    # Using a separator to push the description to the right
+    printf "<b><span color=\"#cba6f7\">%s</span></b>  │  <span color=\"#a6adc8\">%s</span>\n", keys_display, desc
     print executable_command
 }' "$config_file")
 
@@ -79,11 +80,12 @@ for ((i=0; i<${#data[@]}; i+=2)); do
     commands+=("${data[i+1]}")
 done
 
-# Prepare rofi input (efficiently joining array elements)
+# Prepare rofi input
 rofi_input=$(printf "%s\n" "${menu_items[@]}")
 
 # Launch rofi and get the selected index
-chosen_index=$(echo -e "${rofi_input}" | rofi -dmenu -i -p "  " -format 'i' -markup -eh 2)
+# Added -no-show-icons to remove the gap on the left
+chosen_index=$(echo -e "${rofi_input}" | rofi -dmenu -i -p "  " -format 'i' -markup -no-show-icons)
 
 # If an index was returned, execute the command
 if [[ -n "$chosen_index" ]] && [[ "$chosen_index" -lt "${#commands[@]}" ]]; then
